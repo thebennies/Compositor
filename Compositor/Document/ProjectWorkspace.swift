@@ -17,7 +17,11 @@ final class ProjectTab: Identifiable {
         session = EditorSession()
         controller = ProjectController(session: session)
         assistant = AssistantSession(session: session, controller: controller)
-        assistant.tools.sourceName = { [weak self] in self?.title ?? "Untitled" }
+        // An unsaved document is named for the image it was opened from; the tab says Untitled until it's saved.
+        assistant.tools.sourceName = { [weak self] in
+            guard let self else { return "Untitled" }
+            return session.projectURL == nil ? session.sourceName ?? defaultName : title
+        }
     }
 }
 
