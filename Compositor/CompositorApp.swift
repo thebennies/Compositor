@@ -6,6 +6,7 @@ import Sparkle
 struct CompositorApp: App {
     @NSApplicationDelegateAdaptor(CompositorApplicationDelegate.self) private var applicationDelegate
     @AppStorage("navigator.visible") private var showsNavigator = false
+    @AppStorage("assistant.visible") private var showsAssistant = false
     private var session: EditorSession { applicationDelegate.session }
     private func filterMenuItem(_ kind: FilterKind) -> some View {
         Button("\(kind.rawValue)…") { session.beginFilter(kind) }
@@ -143,6 +144,9 @@ struct CompositorApp: App {
                         }
                             .configuredKeyboardShortcut("-").disabled(session.document == nil)
                         Toggle("Navigator (300% and above)", isOn: $showsNavigator)
+                        // VERIFY(macOS): ⇧⌘A reaches this item and isn't taken by a system or Services shortcut.
+                        Toggle("Show Assistant", isOn: $showsAssistant)
+                            .configuredKeyboardShortcut("a", modifiers: [.command, .shift])
                         Toggle("Pixel Grid (800% and above)", isOn: Binding(get: { session.showsPixelGrid },
                                                                               set: { session.showsPixelGrid = $0 }))
                         // ⌘H: the Move tool's transform box there, the selection's outline everywhere else.
@@ -436,6 +440,10 @@ struct CompositorApp: App {
                         .disabled(!session.canEditLayers || session.activeLayer == nil)
                 }
             }
+        // ⌘, opens it: the assistant's OpenRouter key and model.
+        Settings {
+            AssistantSettingsView().roundedControls()
+        }
     }
 
     /// View › CMYK › Profile › Load Profile: a CMYK ICC profile picked from anywhere, kept and chosen.

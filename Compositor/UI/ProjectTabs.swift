@@ -7,7 +7,8 @@ struct ProjectWorkspaceView: View {
     let applicationDelegate: CompositorApplicationDelegate
     private var workspace: ProjectWorkspace { applicationDelegate.workspace }
     var body: some View {
-        ContentView(session: workspace.current.session, applicationDelegate: applicationDelegate)
+        ContentView(session: workspace.current.session, applicationDelegate: applicationDelegate,
+                    assistant: workspace.current.assistant)
             .id(workspace.current.id)
             .disabled(workspace.isManaging)
             .psdConversionSheet(workspace.current.session)

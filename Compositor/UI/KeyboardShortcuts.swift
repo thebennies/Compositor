@@ -108,7 +108,7 @@ struct ShortcutDefinition: Identifiable {
             entry("Move Layer Down", "[", 1, menu: true), entry("Merge Layers", "e", 1, menu: true),
             entry("Show Grid", "'", 1, menu: true), entry("Show Guides", ";", 1, menu: true),
             entry("Show Rulers", "r", 1, menu: true), entry("Snap", ";", 9, menu: true),
-            entry("Lock Guides", ";", 3, menu: true),
+            entry("Lock Guides", ";", 3, menu: true), entry("Show Assistant", "a", 9, menu: true),
             // No key by default, so they aren't hit by mistake; Photoshop's are ⌘Y and ⇧⌘Y.
             .init(title: "CMYK Proof Colors", group: "Menus", original: .unassigned),
             .init(title: "CMYK Gamut Warning", group: "Menus", original: .unassigned),

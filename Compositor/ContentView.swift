@@ -5,8 +5,13 @@ struct ContentView: View {
     /// The Layers panel's width, remembered across launches.
     @AppStorage("layersPanelWidth") private var layersPanelWidth = 252.0
     @AppStorage("navigator.visible") private var showsNavigator = false
+    /// View › Show Assistant, and the panel's width, remembered across launches.
+    @AppStorage("assistant.visible") private var showsAssistant = false
+    @AppStorage("assistantPanelWidth") private var assistantPanelWidth = 300.0
     @Bindable var session: EditorSession
     var applicationDelegate: CompositorApplicationDelegate? = nil
+    /// This project's assistant chat; nil where there's no workspace (tests), which leaves the panel out.
+    var assistant: AssistantSession? = nil
     @Environment(\.openWindow) private var openWindow
     @State private var canvasFrame: CGRect = .zero
     @State private var levelsPanel = FloatingPanelController(name: "levelsPanel")
@@ -146,6 +151,7 @@ struct ContentView: View {
                             .releasesFocusOnCommit(session)
                     }
                 }
+                if !session.canvasOnly { assistantColumn }
                 if !session.canvasOnly {
                     PanelResizeEdge(width: $layersPanelWidth, range: LayersPanel.widths)
                     // Clamped: a width saved when the panel could go narrower is brought into range.
@@ -158,6 +164,17 @@ struct ContentView: View {
                 statusBar.fixedSize(horizontal: false, vertical: true)
                     .modifier(WidthReader(width: $windowWidth))
             }
+        }
+    }
+
+    /// The assistant's chat, between the canvas and the Layers panel, resized from its left edge as that panel is.
+    /// Kept out of `editorStack`, whose type-checking is near its limit.
+    // VERIFY(macOS): `editorStack` still type-checks in reasonable time with this column added.
+    @ViewBuilder private var assistantColumn: some View {
+        if showsAssistant, let assistant {
+            PanelResizeEdge(width: $assistantPanelWidth, range: AssistantPanel.widths)
+            AssistantPanel(assistant: assistant,
+                           width: min(AssistantPanel.widths.upperBound, max(AssistantPanel.widths.lowerBound, assistantPanelWidth)))
         }
     }
 

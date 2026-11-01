@@ -7,6 +7,8 @@ final class ProjectTab: Identifiable {
     let id = UUID()
     let session: EditorSession
     let controller: ProjectController
+    /// The assistant panel's chat for this project. Session-only, like the viewport.
+    let assistant: AssistantSession
     /// Shown until the project is saved: Untitled, the opened file's name, or a Photoshop artboard's.
     var defaultName: String
     var title: String { session.projectURL?.deletingPathExtension().lastPathComponent ?? defaultName }
@@ -14,6 +16,8 @@ final class ProjectTab: Identifiable {
         defaultName = name
         session = EditorSession()
         controller = ProjectController(session: session)
+        assistant = AssistantSession(session: session, controller: controller)
+        assistant.tools.sourceName = { [weak self] in self?.title ?? "Untitled" }
     }
 }
 
