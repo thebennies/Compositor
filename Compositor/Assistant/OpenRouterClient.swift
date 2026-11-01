@@ -51,9 +51,16 @@ nonisolated struct ChatMessage: Codable, Equatable, Sendable {
     var content: String?
     var toolCalls: [ToolCall]?
     var toolCallID: String?
+    /// Pictures sent with a user message, as data URLs, for a model that can see. With any, the content goes out as a
+    /// list of parts: the text, then each picture.
+    var images: [String] = []
 
     static func system(_ text: String) -> ChatMessage { ChatMessage(role: "system", content: text) }
-    static func user(_ text: String) -> ChatMessage { ChatMessage(role: "user", content: text) }
+    static func user(_ text: String, images: [String] = []) -> ChatMessage {
+        var message = ChatMessage(role: "user", content: text)
+        message.images = images
+        return message
+    }
     static func tool(_ id: String, content: String) -> ChatMessage { ChatMessage(role: "tool", content: content, toolCallID: id) }
 
     init(role: String, content: String?, toolCalls: [ToolCall]? = nil, toolCallID: String? = nil) {
@@ -69,10 +76,30 @@ nonisolated struct ChatMessage: Codable, Equatable, Sendable {
         case toolCallID = "tool_call_id"
     }
 
+    private nonisolated struct Part: Codable {
+        nonisolated struct ImageURL: Codable { var url: String }
+        var type: String
+        var text: String?
+        var imageURL: ImageURL?
+
+        enum CodingKeys: String, CodingKey {
+            case type, text
+            case imageURL = "image_url"
+        }
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         role = try container.decodeIfPresent(String.self, forKey: .role) ?? "assistant"
-        content = try container.decodeIfPresent(String.self, forKey: .content)
+        // Some providers answer in parts too; only their text is kept.
+        if let text = try? container.decodeIfPresent(String.self, forKey: .content) {
+            content = text
+        } else if let parts = try? container.decodeIfPresent([Part].self, forKey: .content) {
+            let text = parts.compactMap(\.text).joined(separator: "\n")
+            content = text.isEmpty ? nil : text
+        } else {
+            content = nil
+        }
         toolCalls = try container.decodeIfPresent([ToolCall].self, forKey: .toolCalls)
         toolCallID = try container.decodeIfPresent(String.self, forKey: .toolCallID)
     }
@@ -80,8 +107,14 @@ nonisolated struct ChatMessage: Codable, Equatable, Sendable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(role, forKey: .role)
-        // Always written, null beside tool calls: some providers reject an assistant message without it.
-        try container.encode(content, forKey: .content)
+        if !images.isEmpty {
+            let parts = [Part(type: "text", text: content ?? "")]
+                + images.map { Part(type: "image_url", imageURL: Part.ImageURL(url: $0)) }
+            try container.encode(parts, forKey: .content)
+        } else {
+            // Always written, null beside tool calls: some providers reject an assistant message without it.
+            try container.encode(content, forKey: .content)
+        }
         if let toolCalls, !toolCalls.isEmpty { try container.encode(toolCalls, forKey: .toolCalls) }
         try container.encodeIfPresent(toolCallID, forKey: .toolCallID)
     }
@@ -187,7 +220,8 @@ nonisolated enum OpenRouterError: LocalizedError, Equatable {
 /// OpenRouter's OpenAI-compatible chat completions, without streaming.
 nonisolated struct OpenRouterClient: Sendable {
     static let endpoint = URL(string: "https://openrouter.ai/api/v1/chat/completions")!
-    static let defaultModel = "deepseek/deepseek-chat"
+    /// A model that calls tools and can see, as `look_at_canvas` needs.
+    static let defaultModel = "deepseek/deepseek-v4.1-flash"
 
     var session: URLSession = .shared
 
