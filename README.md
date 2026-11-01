@@ -83,6 +83,7 @@ brew install --cask robbietilton-compositor
 
 ### Works with AI agents
 - AI agents and scripts can build and edit projects directly: a `.comp` is a folder of PNG layers and a manifest, and an open project updates live as it's written. See [Writing Compositor projects](docs/writing-comp-files.md)
+- An assistant panel (View › Show Assistant, ⇧⌘A): ask in plain language to resize, export, or highlight lines of text in a scanned page, or select lines and say "make these pink"; each change is one undo step. It uses a model through OpenRouter, and only recognized text and the document's details leave the Mac, never its pixels. See [The assistant](docs/assistant.md)
 
 ## Requirements
 
