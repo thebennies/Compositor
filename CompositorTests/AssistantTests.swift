@@ -188,7 +188,7 @@ struct AssistantTests {
         let session = EditorSession()
         session.createDocument(width: 100, height: 100, emptyLayer: true)
         session.groupSelectedLayers()
-        let folder = try #require(session.document?.layers.first(where: \.isGroup))
+        let folder = try #require(session.document?.layers.first { $0.isGroup })
         #expect(throws: HighlightError.notPixelLayer(folder.name)) {
             try session.highlight([CGRect(x: 0, y: 0, width: 50, height: 10)], color: HighlightColor("yellow")!, layerName: folder.name)
         }
