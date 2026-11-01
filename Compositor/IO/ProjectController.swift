@@ -66,12 +66,6 @@ final class ProjectController {
         return .saved(url)
     }
 
-    /// An export's file name: `base` (a project's or document's name; "Untitled" without one) with `ext`.
-    static func exportName(_ base: String?, extension ext: String) -> String {
-        let base = base?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return (base.isEmpty ? "Untitled" : fileName(base)) + "." + ext
-    }
-
     /// The layer list's Export Layers as PNGs…: each selected layer on its own, trimmed to its pixels and named after it.
     /// One layer goes to a save panel; several to a folder, replacing files of the same names there once asked.
     func exportLayers() async {
@@ -142,6 +136,16 @@ final class ProjectController {
         }
     }
 
+    /// An export's file name: `name-YYYYMMDD-HHMMSS.extension`, so exporting again never offers to replace the last one.
+    /// No name, or a blank one, is Untitled.
+    static func exportName(_ name: String?, extension pathExtension: String, at date: Date = .now) -> String {
+        let name = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return (name.isEmpty ? "Untitled" : fileName(name)) + "-" + formatter.string(from: date) + "." + pathExtension
+    }
+
     /// A layer's name as a file's: without the characters Finder can't take, and never empty.
     static func fileName(_ name: String) -> String {
         let cleaned = name.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
@@ -195,15 +199,16 @@ final class ProjectController {
     /// The format Export As last used, offered first next time.
     private var lastExportFormat = ExportFormat.png
 
-    /// Where an export goes: `name`, or the project's name, with the format's extension.
+    /// Where an export goes: `name`, or the project's name, or the image it was opened from, stamped with the time.
     private func savePanel(for format: ExportFormat, named name: String? = nil) async -> URL? {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [format.type]
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
         panel.title = "Export " + format.rawValue
-        panel.nameFieldStringValue = Self.exportName(name ?? session.projectURL?.deletingPathExtension().lastPathComponent,
-                                                     extension: format.type.preferredFilenameExtension ?? format.rawValue.lowercased())
+        panel.nameFieldStringValue = Self.exportName(
+            name ?? session.projectURL?.deletingPathExtension().lastPathComponent ?? session.sourceName,
+            extension: format.type.preferredFilenameExtension ?? format.rawValue.lowercased())
         let response: NSApplication.ModalResponse
         if let window { response = await panel.beginSheetModal(for: window) }
         else { response = await panel.begin() }

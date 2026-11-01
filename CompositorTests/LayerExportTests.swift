@@ -73,4 +73,12 @@ struct LayerExportTests {
         #expect(ProjectController.fileName("  ") == "Layer")
         #expect(ProjectController.fileName(".hidden") == "Layer.hidden")
     }
+
+    @Test func exportsAreNamedForTheirSourceAndTime() {
+        var components = DateComponents(year: 2026, month: 3, day: 7, hour: 9, minute: 5, second: 2)
+        components.calendar = Calendar(identifier: .gregorian)
+        let date = components.date!
+        #expect(ProjectController.exportName("Beach", extension: "png", at: date) == "Beach-20260307-090502.png")
+        #expect(ProjectController.exportName("a/b", extension: "jpg", at: date) == "a-b-20260307-090502.jpg")
+    }
 }

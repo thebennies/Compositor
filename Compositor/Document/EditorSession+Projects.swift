@@ -78,6 +78,7 @@ extension EditorSession {
         activeLayerID = nil
         renamingLayerID = nil
         projectURL = nil
+        sourceName = nil
         history.reset()
     }
 

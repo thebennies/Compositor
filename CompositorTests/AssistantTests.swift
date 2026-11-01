@@ -258,10 +258,13 @@ struct AssistantTests {
     }
 
     @Test func exportNamesFallBackToUntitled() {
-        #expect(ProjectController.exportName("Invoice", extension: "png") == "Invoice.png")
-        #expect(ProjectController.exportName(nil, extension: "png") == "Untitled.png")
-        #expect(ProjectController.exportName("  ", extension: "jpg") == "Untitled.jpg")
-        #expect(ProjectController.exportName("Q3/Q4", extension: "png") == "Q3-Q4.png")
+        var components = DateComponents(year: 2026, month: 3, day: 7, hour: 9, minute: 5, second: 2)
+        components.calendar = Calendar(identifier: .gregorian)
+        let date = components.date!
+        #expect(ProjectController.exportName("Invoice", extension: "png", at: date) == "Invoice-20260307-090502.png")
+        #expect(ProjectController.exportName(nil, extension: "png", at: date) == "Untitled-20260307-090502.png")
+        #expect(ProjectController.exportName("  ", extension: "jpg", at: date) == "Untitled-20260307-090502.jpg")
+        #expect(ProjectController.exportName("Q3/Q4", extension: "png", at: date) == "Q3-Q4-20260307-090502.png")
     }
 
     @Test func contextNoteMentionsTheSelection() {
