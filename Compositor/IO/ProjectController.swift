@@ -66,6 +66,35 @@ final class ProjectController {
         return .saved(url)
     }
 
+    /// The flattened canvas straight into `folder`, no panel, for the assistant: a PNG, or a JPEG at `jpegQuality`
+    /// (0…1) over white. Named as Export As names it, and never replacing a file there. Nil when something else is
+    /// under way.
+    func exportImageFile(jpegQuality: Double?, named name: String?, in folder: URL, at date: Date = .now) async throws -> URL? {
+        guard session.document != nil, begin() else { return nil }
+        defer { session.isProjectBusy = false }
+        guard let snapshot = session.projectSnapshot() else { return nil }
+        let data: Data
+        if let jpegQuality {
+            let raster = try await ImageExporter.shared.render(snapshot)
+            data = try await ImageExporter.shared.jpeg(raster, options: JPEGOptions(quality: jpegQuality)).data
+        } else {
+            data = try await ImageExporter.shared.pngData(snapshot)
+        }
+        let url = Self.freeURL(in: folder, named: Self.exportName(name ?? session.projectURL?.deletingPathExtension().lastPathComponent
+            ?? session.sourceName, extension: jpegQuality == nil ? "png" : "jpg", at: date))
+        try await ImageExporter.shared.write(data, to: url)
+        return url
+    }
+
+    /// `file` in `folder`, or with " 2", " 3"… before its extension when a file of that name is already there.
+    static func freeURL(in folder: URL, named file: String) -> URL {
+        let first = folder.appendingPathComponent(file)
+        guard FileManager.default.fileExists(atPath: first.path) else { return first }
+        let base = first.deletingPathExtension().lastPathComponent, ext = first.pathExtension
+        return (2...).lazy.map { folder.appendingPathComponent("\(base) \($0).\(ext)") }
+            .first { !FileManager.default.fileExists(atPath: $0.path) }!
+    }
+
     /// The layer list's Export Layers as PNGs…: each selected layer on its own, trimmed to its pixels and named after it.
     /// One layer goes to a save panel; several to a folder, replacing files of the same names there once asked.
     func exportLayers() async {
