@@ -206,6 +206,9 @@ final class EditorSession {
     var effectSelection: LayerEffectSelection?
     @ObservationIgnored var effectsPreviews = EffectsPreviewCache()
     var projectURL: URL?
+    /// The name of the image an unsaved document was opened from, without its extension. Exports are named after it
+    /// until the project is saved and has a name of its own.
+    var sourceName: String?
     /// Blocks overlapping edits immediately. Not observed by the UI: controls only dim via
     /// `showsBusy`, after an operation has run long enough to be worth showing, so quick
     /// edits (invert, fills, stroke commits) never flash the interface.
@@ -1005,8 +1008,9 @@ final class EditorSession {
             let startsDocument = document == nil
             var psdProfile: CMYKProfile?
             defer {
-                if startsDocument, document != nil, let profile = psdProfile ?? CMYK.profile(ofImageAt: url) {
-                    proofProfile = CMYK.adopt(profile)
+                if startsDocument, document != nil {
+                    sourceName = url.deletingPathExtension().lastPathComponent
+                    if let profile = psdProfile ?? CMYK.profile(ofImageAt: url) { proofProfile = CMYK.adopt(profile) }
                 }
             }
             do {
@@ -1257,6 +1261,7 @@ final class EditorSession {
             guard await finishPSDReading(imported.conversions) else { return }
             let startsDocument = document == nil
             try insertPhotoshop(imported, named: name)
+            if startsDocument { sourceName = name }
             if startsDocument, let profile = parsed.cmykProfile { proofProfile = CMYK.adopt(profile) }
         } catch {
             importError = [importError, "\(name): \(error.localizedDescription)"].compactMap { $0 }.joined(separator: "\n\n")

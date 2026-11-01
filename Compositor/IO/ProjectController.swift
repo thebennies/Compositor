@@ -126,6 +126,14 @@ final class ProjectController {
         }
     }
 
+    /// An export's file name: `name-YYYYMMDD-HHMMSS.extension`, so exporting again never offers to replace the last one.
+    static func exportName(_ name: String, extension pathExtension: String, at date: Date = .now) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return fileName(name) + "-" + formatter.string(from: date) + "." + pathExtension
+    }
+
     /// A layer's name as a file's: without the characters Finder can't take, and never empty.
     static func fileName(_ name: String) -> String {
         let cleaned = name.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
@@ -179,15 +187,16 @@ final class ProjectController {
     /// The format Export As last used, offered first next time.
     private var lastExportFormat = ExportFormat.png
 
-    /// Where an export goes: the project's name, with the format's extension.
+    /// Where an export goes: the project's name, or the image it was opened from, stamped with the time.
     private func savePanel(for format: ExportFormat) async -> URL? {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [format.type]
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
         panel.title = "Export " + format.rawValue
-        panel.nameFieldStringValue = (session.projectURL?.deletingPathExtension().lastPathComponent ?? "Untitled")
-            + "." + (format.type.preferredFilenameExtension ?? format.rawValue.lowercased())
+        panel.nameFieldStringValue = Self.exportName(
+            session.projectURL?.deletingPathExtension().lastPathComponent ?? session.sourceName ?? "Untitled",
+            extension: format.type.preferredFilenameExtension ?? format.rawValue.lowercased())
         let response: NSApplication.ModalResponse
         if let window { response = await panel.beginSheetModal(for: window) }
         else { response = await panel.begin() }
