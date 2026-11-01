@@ -206,7 +206,7 @@ nonisolated enum AssistantTool: String, CaseIterable, Sendable {
         switch self {
         case .getDocumentInfo: "The canvas's size and resolution, its name, its layers (bottom to top), the active layer and the selection's bounds."
         case .lookAtCanvas: "Shows you the canvas as it looks now, in the next message: at most 1024 px on its longer side, with rulers along the top and left numbered in document pixels (read positions off them), and the selection tinted magenta and outlined. Give region to look closer at part of it. Look before selecting, and again to check a selection or an edit."
-        case .select: "Changes the selection, one undo step. method: object (Vision outlines the object under each point; give points on it, and box to keep only the part inside it), subject (the main subject, limited to box if given), rectangle or ellipse (box), all, none or invert. mode combines it with the current selection."
+        case .select: "Changes the selection, one undo step. method: similar_color (the Magic Wand: the area of similar color connected to each point, for a wall, sky, floor, a painted panel; give points well inside it and raise tolerance if it stops short), object (Vision outlines the person or thing under each point, not walls or surfaces), subject (the main subject), polygon (points are the corners, read off the rulers), rectangle or ellipse (box), all, none or invert. box keeps only the part of the result inside it. mode combines it with the current selection."
         case .recolor: "Changes the color of the selected area with a Hue/Saturation adjustment layer masked to the selection, at the top of the stack, so the photo itself is untouched. Give color to make it that color (its shading kept), or hue_shift / saturation / lightness to shift it. Pass layer_id to change a recolor layer made before instead. One undo step."
         case .setLayer: "Changes a layer by layer_id or layer_name: opacity (percent), visible, name, blend_mode, or delete. One undo step."
         case .resizeImage: "Resizes the whole image (Image Size), resampling every layer. Give width, height or long_edge in pixels; the missing side follows the aspect ratio. One undo step."
@@ -243,10 +243,12 @@ nonisolated enum AssistantTool: String, CaseIterable, Sendable {
             ])
         case .select:
             return schema([
-                "method": .object(["type": .string("string"), "enum": .array(["object", "subject", "rectangle", "ellipse", "all", "none", "invert"].map(JSONValue.string)),
+                "method": .object(["type": .string("string"), "enum": .array(["similar_color", "object", "subject", "polygon", "rectangle", "ellipse", "all", "none", "invert"].map(JSONValue.string)),
                                    "description": .string("How to select.")]),
                 "points": .object(["type": .string("array"), "items": .object(["type": .string("array"), "items": .object(["type": .string("number")])]),
-                                   "description": .string("For object: [[x, y], …] in document pixels, each on the object; one per object to select several (both shoes).")]),
+                                   "description": .string("For similar_color and object: [[x, y], …] in document pixels, each well inside what to select; one per separate area or object. For polygon: its corners in order.")]),
+                "tolerance": property("integer", "For similar_color: how far each color channel (0–255) may differ from the point's color. Default 40; use 60–90 for a wall with shading, 15–25 to keep to a flat color."),
+                "contiguous": property("boolean", "For similar_color: only areas connected to the point (default true); false takes every similar pixel in the picture."),
                 "box": box("For rectangle and ellipse, the shape; for object and subject, keeps only the part inside it."),
                 "mode": .object(["type": .string("string"), "enum": .array(["replace", "add", "subtract", "intersect"].map(JSONValue.string)),
                                  "description": .string("Combine with the current selection. Default replace.")]),
@@ -325,6 +327,10 @@ final class AssistantToolRunner {
     var exportFolder: () -> URL = { FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0] }
     /// Pictures `look_at_canvas` made, for the conversation to send in a message after the tools' results.
     private var pictures: [String] = []
+    /// How many times `look_at_canvas` ran in this request. Each look sends a picture, so a model that keeps zooming
+    /// without ever selecting is stopped.
+    private var looks = 0
+    static let lookLimit = 6
     /// Set by `close_document`: the document closes once the reply is done, so the chat isn't cut off mid-turn.
     private(set) var closeRequested = false
 
@@ -334,6 +340,9 @@ final class AssistantToolRunner {
     }
 
     func forgetRecognizedText() { recognized = nil }
+
+    /// A new request from the user: looking starts afresh.
+    func beginRequest() { looks = 0 }
 
     /// The pictures made since last asked, emptied.
     func takePictures() -> [String] {
@@ -448,12 +457,17 @@ final class AssistantToolRunner {
 
     private func look(_ arguments: ToolArguments) throws -> (JSONValue, String) {
         guard let document = session.document else { throw ToolError.noDocument }
+        guard looks < Self.lookLimit else {
+            throw ToolError.failed("You've looked \(Self.lookLimit) times for this request. Don't look again: select what you have found "
+                + "now, using the rulers on the pictures you already have, or ask the user to point out what they mean.")
+        }
         let region = try arguments.rect("region")
         let showSelection = try arguments.bool("show_selection") ?? true
         guard let composite = session.selectionSample(document, sampleAllLayers: true) else { throw ExportError.render }
         let selection = showSelection ? session.selection.flatMap { $0.isEmpty ? nil : $0.path } : nil
         let look = try CanvasLook.render(composite, region: region, selection: selection)
         pictures.append(try CanvasLook.dataURL(look.image))
+        looks += 1
         let shown = look.region
         return (.object([
             "shown_region": Self.json(shown),
@@ -465,7 +479,7 @@ final class AssistantToolRunner {
 
     private func select(_ arguments: ToolArguments) async throws -> (JSONValue, String) {
         guard let method = try arguments.string("method")?.lowercased() else {
-            throw ToolError.invalidArgument("method", expected: "object, subject, rectangle, ellipse, all, none or invert")
+            throw ToolError.invalidArgument("method", expected: "similar_color, object, subject, polygon, rectangle, ellipse, all, none or invert")
         }
         let modeName = try arguments.string("mode")?.lowercased() ?? "replace"
         guard ["replace", "add", "subtract", "intersect"].contains(modeName) else {
@@ -475,6 +489,9 @@ final class AssistantToolRunner {
         guard (0...250).contains(feather) else { throw ToolError.invalidArgument("feather", expected: "between 0 and 250") }
         let box = try arguments.rect("box")
         let points = try arguments.points("points")
+        let tolerance = try arguments.int("tolerance") ?? 40
+        guard (0...255).contains(tolerance) else { throw ToolError.invalidArgument("tolerance", expected: "between 0 and 255") }
+        let contiguous = try arguments.bool("contiguous") ?? true
         try requireEditable()
         guard let document = session.document else { throw ToolError.noDocument }
         let canvas = CGRect(origin: .zero, size: document.size)
@@ -491,6 +508,26 @@ final class AssistantToolRunner {
         case "rectangle", "ellipse":
             guard let box else { throw ToolError.invalidArgument("box", expected: "the \(method)'s box {x, y, width, height}") }
             shape = method == "rectangle" ? CGPath(rect: box, transform: nil) : CGPath(ellipseIn: box, transform: nil)
+        case "polygon":
+            guard let points, points.count >= 3 else { throw ToolError.invalidArgument("points", expected: "at least 3 corners [[x, y], …]") }
+            let outline = CGMutablePath()
+            outline.addLines(between: points)
+            outline.closeSubpath()
+            shape = outline
+        case "similar_color":
+            guard let points, !points.isEmpty else { throw ToolError.invalidArgument("points", expected: "points [[x, y], …] inside the area") }
+            guard points.allSatisfy(canvas.contains) else { throw ToolError.failed("Every point must be on the canvas, 0…\(document.width) × 0…\(document.height).") }
+            guard let sample = session.selectionSample(document, sampleAllLayers: true) else { throw ExportError.render }
+            let settings = WandSettings(tolerance: tolerance, sampleSize: .fiveByFive, contiguous: contiguous, sampleAllLayers: true)
+            shape = try await traced("Similar color") {
+                var found = CGMutablePath() as CGPath
+                for point in points {
+                    if let outline = try MagicWand.select(in: sample, at: point, settings: settings) {
+                        found = found.isEmpty ? outline : found.union(outline, using: .winding)
+                    }
+                }
+                return found
+            }
         case "object":
             guard let points, !points.isEmpty else { throw ToolError.invalidArgument("points", expected: "points [[x, y], …] on the object") }
             guard points.allSatisfy(canvas.contains) else { throw ToolError.failed("Every point must be on the canvas, 0…\(document.width) × 0…\(document.height).") }
@@ -514,13 +551,14 @@ final class AssistantToolRunner {
                 return outline.copy(using: &toDocument) ?? CGMutablePath()
             }
         default:
-            throw ToolError.invalidArgument("method", expected: "object, subject, rectangle, ellipse, all, none or invert")
+            throw ToolError.invalidArgument("method", expected: "similar_color, object, subject, polygon, rectangle, ellipse, all, none or invert")
         }
-        if let box, method == "object" || method == "subject" { shape = shape.intersection(CGPath(rect: box, transform: nil), using: .winding) }
+        if let box, ["object", "subject", "similar_color"].contains(method) { shape = shape.intersection(CGPath(rect: box, transform: nil), using: .winding) }
         shape = shape.intersection(CGPath(rect: canvas, transform: nil), using: .winding)
         if shape.isEmpty || shape.boundingBoxOfPath.isEmpty {
             switch method {
-            case "object": throw ToolError.failed("No object was found at those points. Look closer with look_at_canvas and put the points well inside it.")
+            case "object": throw ToolError.failed("No object was found at those points. Vision finds people and things, not walls or surfaces: for those use similar_color.")
+            case "similar_color": throw ToolError.failed("Nothing matched\(box == nil ? "" : " inside the box"). Put the points well inside the area, or raise tolerance.")
             case "subject": throw ToolError.failed("No subject was found\(box == nil ? "" : " in the box").")
             default: throw ToolError.failed("The shape is outside the canvas.")
             }
@@ -537,7 +575,7 @@ final class AssistantToolRunner {
         }
         // Unchanged, setSelection makes no undo step; the report still says what's selected.
         session.setSelection(DocumentSelection(path: result, antialiased: true, feather: CGFloat(feather)), name: "Select \(method.capitalized)")
-        return (selectionReport(), "Selected \(method == "object" ? (points?.count ?? 1 > 1 ? "objects" : "the object") : method == "subject" ? "the subject" : "a \(method)")")
+        return (selectionReport(), "Selected \(method == "object" ? (points?.count ?? 1 > 1 ? "objects" : "the object") : method == "subject" ? "the subject" : method == "similar_color" ? "similar color" : "a \(method)")")
     }
 
     /// Runs Vision off the main actor, the editor held busy meanwhile as Select › Subject holds it.

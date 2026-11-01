@@ -7,6 +7,8 @@ code. Each change shows on the canvas as it happens and is one step in Edit › 
 
 Some things to try:
 
+- "Make the wall in the bottom right monochrome." The Magic Wand selects the wall by its color, and a Hue/Saturation
+  layer with Saturation at −100 takes the color out, leaving the photo itself untouched.
 - "Make my shoes red." The model looks at the canvas, selects the shoes, checks the selection, and adds a Hue/Saturation
   layer masked to them, so the photo itself is untouched. "A bit darker" or "more orange" changes that layer.
 - "Resize my image to 1920 wide, then export as PNG." The PNG goes straight to Downloads.
@@ -46,7 +48,7 @@ Apple's Vision framework; a model that can't take images can still highlight tex
 | `get_document_info` | The canvas's width, height and resolution; `sourceName`; the layers bottom to top (id, name, visibility, opacity, blend mode, kind); the active layer's id; the selection's bounds in document pixels, or null. | — |
 | `resize_image` | Image Size without its sheet. `width`, `height`, `long_edge`, `keep_aspect` (default true), `resolution`. One side keeps the aspect ratio; `long_edge` scales the longer side. | Image Size |
 | `look_at_canvas` | The canvas as shown, sent to the model in a message after the tools' results (a tool result is text only): at most 1024 px on the longer side, a `region` enlarged up to 4×, with rulers along the top and left numbered in document pixels and the selection tinted and outlined in magenta. | — |
-| `select` | `method`: `object` (Vision's instance mask under each of `points`, as the Object Selection tool), `subject` (Select › Subject), `rectangle`, `ellipse`, `all`, `none`, `invert`. `box` is the shape, or limits an object or subject to it; `mode` is `replace`, `add`, `subtract` or `intersect`; `feather` in pixels. Reports the bounds and the share of the canvas covered. | Select Object, … |
+| `select` | `method`: `similar_color` (the Magic Wand: the connected area of similar color at each of `points`, for a wall, sky or any even surface; `tolerance` 0–255, default 40, and `contiguous`), `object` (Vision's instance mask under each point, as the Object Selection tool: people and things, not surfaces), `subject` (Select › Subject), `polygon` (`points` are the corners), `rectangle`, `ellipse`, `all`, `none`, `invert`. `box` is the shape, or keeps only the part of the result inside it; `mode` is `replace`, `add`, `subtract` or `intersect`; `feather` in pixels. Reports the bounds and the share of the canvas covered. | Select …, Magic Wand |
 | `recolor` | A Hue/Saturation adjustment layer at the top of the stack, masked to the selection (which is used up), or the whole image with `whole_image`. `color` colorizes to that color, its Lightness set from the area's average lightness so a white shoe made red is red rather than pink; `hue_shift`, `saturation` and `lightness` are the sliders. `layer_id` changes a layer made before instead. | Recolor |
 | `set_layer` | By `layer_id` or `layer_name`: `opacity` (percent), `visible`, `name`, `blend_mode`, or `delete`. | Layer Properties |
 | `export_image` | The flattened canvas as PNG or JPEG (`quality`) straight into Downloads, named `name-YYYYMMDD-HHMMSS`, never replacing a file. Needs the `files.downloads.read-write` entitlement. | — |

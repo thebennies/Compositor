@@ -85,6 +85,20 @@ struct AssistantEditingTests {
         #expect(CanvasLook.rulerStep(zoom: 0.5) == 200 && CanvasLook.rulerStep(zoom: 4) == 25)
     }
 
+    @Test func lookingStopsAfterTheLimitUntilTheNextRequest() async throws {
+        let (_, runner) = runner()
+        for index in 0..<AssistantToolRunner.lookLimit {
+            let outcome = await runner.run(ToolCall(id: "\(index)", name: "look_at_canvas", arguments: ""))
+            #expect(!outcome.failed)
+        }
+        let refused = await runner.run(ToolCall(id: "x", name: "look_at_canvas", arguments: ""))
+        #expect(refused.failed && refused.content.contains("select what you have found"))
+        #expect(runner.takePictures().count == AssistantToolRunner.lookLimit, "the refused look sent nothing")
+        runner.beginRequest()
+        let again = await runner.run(ToolCall(id: "y", name: "look_at_canvas", arguments: ""))
+        #expect(!again.failed)
+    }
+
     // MARK: Selecting
 
     @Test func shapesSelectAndCombine() async throws {
@@ -104,6 +118,31 @@ struct AssistantEditingTests {
         #expect(subtract.failed && subtract.content.contains("no selection"))
         let off = await runner.run(ToolCall(id: "6", name: "select", arguments: #"{"method": "object", "points": [[900, 10]]}"#))
         #expect(off.failed && off.content.contains("on the canvas"))
+    }
+
+    @Test func similarColorSelectsTheWallAndPolygonsTheirCorners() async throws {
+        // A wall of two panels: light blue on the left, cream on the right.
+        let (session, runner) = runner(width: 200, height: 100)
+        let context = try BrushRaster.context(width: 200, height: 100, mask: false)
+        context.setFillColor(CGColor(srgbRed: 0.68, green: 0.82, blue: 0.93, alpha: 1)); context.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+        context.setFillColor(CGColor(srgbRed: 0.96, green: 0.92, blue: 0.8, alpha: 1)); context.fill(CGRect(x: 100, y: 0, width: 100, height: 100))
+        let image = try #require(context.makeImage())
+        session.insert(ImportedImage(image: image, thumbnail: try PixelAdjust.thumbnail(of: image), name: "Wall"), centeredAt: nil)
+
+        let blue = try object(await runner.run(ToolCall(id: "1", name: "select", arguments: #"{"method": "similar_color", "points": [[40, 50]]}"#)))
+        #expect(near(session.selection?.path.boundingBoxOfPath, CGRect(x: 0, y: 0, width: 100, height: 100)))
+        if case .number(let fraction)? = blue["fraction_of_canvas"] { #expect(abs(fraction - 0.5) < 0.02) } else { Issue.record("No fraction") }
+        let both = try object(await runner.run(ToolCall(id: "2", name: "select", arguments: #"{"method": "similar_color", "points": [[40, 50]], "tolerance": 255}"#)))
+        if case .number(let fraction)? = both["fraction_of_canvas"] { #expect(fraction > 0.98, "a wide tolerance takes both panels") } else { Issue.record("No fraction") }
+        _ = await runner.run(ToolCall(id: "3", name: "select", arguments: #"{"method": "similar_color", "points": [[150, 50]], "box": [120, 0, 80, 100]}"#))
+        #expect(near(session.selection?.path.boundingBoxOfPath, CGRect(x: 120, y: 0, width: 80, height: 100)), "the box keeps only its part")
+
+        _ = await runner.run(ToolCall(id: "4", name: "select", arguments: #"{"method": "polygon", "points": [[10, 10], [60, 10], [60, 40]]}"#))
+        #expect(near(session.selection?.path.boundingBoxOfPath, CGRect(x: 10, y: 10, width: 50, height: 30)))
+        let line = await runner.run(ToolCall(id: "5", name: "select", arguments: #"{"method": "polygon", "points": [[10, 10], [60, 10]]}"#))
+        #expect(line.failed && line.content.contains("at least 3"))
+        let bad = await runner.run(ToolCall(id: "6", name: "select", arguments: #"{"method": "similar_color", "points": [[40, 50]], "tolerance": 300}"#))
+        #expect(bad.failed)
     }
 
     // MARK: Recoloring

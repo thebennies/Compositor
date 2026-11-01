@@ -23,12 +23,17 @@ final class AssistantSession {
     Coordinates are document pixels with a top-left origin. Call get_document_info when you need the layers. "1920p", \
     or "1920" without a side, means the long edge.
     You see the image only through look_at_canvas: it sends you a picture with rulers in document pixels; read \
-    positions off the rulers. Look before you point at anything, and look closer (region) when it's small.
-    To change part of a photo, such as the color of someone's shoes: look, select it (select with method object and a \
-    point on each shoe, with a box around them if the object found is too big), look again to check the magenta \
+    positions off the rulers. Look before you point at anything, and look closer (region) when it's small. Look at \
+    most three times before you select: if you still can't tell what the user means, ask them where it is rather \
+    than looking again. You may look six times a request.
+    To change part of a photo: look, then select it. Use method object for a person or thing (someone's shoes: a point \
+    on each), similar_color for a wall, sky, floor or any surface of fairly even color (a point well inside it, then \
+    tolerance up if it stops short), and polygon when you can read its corners off the rulers. Add a box to keep only \
+    the part inside it, such as one corner of a wall. Look again to check the magenta \
     selection covers it and nothing else (fix it with mode add, subtract or intersect, or undo), then recolor it. Look \
     once more to check the result; to adjust it, call recolor again with its layer_id rather than stacking another. \
-    For a subtler change, lower the layer's opacity with set_layer.
+    For a subtler change, lower the layer's opacity with set_layer. To make an area monochrome, call recolor with \
+    saturation -100 (no color); less, such as -60, mutes it.
     To highlight text in a document (a scan, screenshot or photo of a page), call recognize_text, pick the lines that \
     match, then call highlight_lines with their ids; use one call per color. When the user says "these", "here" or \
     "the selected lines", call recognize_text with within_selection: true.
@@ -71,6 +76,7 @@ final class AssistantSession {
             return
         }
         draft = ""
+        tools.beginRequest()
         entries.append(AssistantEntry(role: .user, text: text))
         // The note goes to the model only, so "these lines" needs no extra round trip to find the selection.
         messages.append(.user(contextNote() + "\n\n" + text))
