@@ -46,14 +46,30 @@ final class ProjectController {
 
     /// File › Export PNG…: the flattened canvas, lossless, straight to a save panel.
     func exportPNG() async {
-        guard session.document != nil, begin() else { return }
+        do { _ = try await exportPNGFile() }
+        catch { await showError("Couldn’t export PNG", error: error) }
+    }
+
+    /// What `exportPNGFile` did: saved, cancelled in the save panel, or not started because something else is under way.
+    enum PNGExport: Equatable { case saved(URL), cancelled, unavailable }
+
+    /// Export PNG's work, throwing rather than showing an alert, for the assistant to report back. `name` is the file
+    /// name the save panel suggests, without its extension; nil suggests the project's.
+    func exportPNGFile(named name: String? = nil) async throws -> PNGExport {
+        guard session.document != nil, begin() else { return .unavailable }
         defer { session.isProjectBusy = false }
-        guard let snapshot = session.projectSnapshot() else { return }
-        guard let url = await savePanel(for: .png) else { return }
+        guard let snapshot = session.projectSnapshot() else { return .unavailable }
+        guard let url = await savePanel(for: .png, named: name) else { return .cancelled }
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        do { try await ImageExporter.shared.exportPNG(snapshot, to: url) }
-        catch { await showError("Couldn’t export PNG", error: error) }
+        try await ImageExporter.shared.exportPNG(snapshot, to: url)
+        return .saved(url)
+    }
+
+    /// An export's file name: `base` (a project's or document's name; "Untitled" without one) with `ext`.
+    static func exportName(_ base: String?, extension ext: String) -> String {
+        let base = base?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return (base.isEmpty ? "Untitled" : fileName(base)) + "." + ext
     }
 
     /// The layer list's Export Layers as PNGs…: each selected layer on its own, trimmed to its pixels and named after it.
@@ -179,15 +195,15 @@ final class ProjectController {
     /// The format Export As last used, offered first next time.
     private var lastExportFormat = ExportFormat.png
 
-    /// Where an export goes: the project's name, with the format's extension.
-    private func savePanel(for format: ExportFormat) async -> URL? {
+    /// Where an export goes: `name`, or the project's name, with the format's extension.
+    private func savePanel(for format: ExportFormat, named name: String? = nil) async -> URL? {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [format.type]
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
         panel.title = "Export " + format.rawValue
-        panel.nameFieldStringValue = (session.projectURL?.deletingPathExtension().lastPathComponent ?? "Untitled")
-            + "." + (format.type.preferredFilenameExtension ?? format.rawValue.lowercased())
+        panel.nameFieldStringValue = Self.exportName(name ?? session.projectURL?.deletingPathExtension().lastPathComponent,
+                                                     extension: format.type.preferredFilenameExtension ?? format.rawValue.lowercased())
         let response: NSApplication.ModalResponse
         if let window { response = await panel.beginSheetModal(for: window) }
         else { response = await panel.begin() }
@@ -235,6 +251,16 @@ final class ProjectController {
             let resized = try await ImageResizer.shared.resize(snapshot, to: options)
             session.applyImageSize(resized)
         } catch { await showError("Couldn’t resize the image", error: error) }
+    }
+
+    /// Image Size without its sheet, for the assistant: one "Image Size" undo step. False when there's no document or
+    /// another operation is under way; a resize that fails throws.
+    func resizeImage(to options: ImageSizeOptions) async throws -> Bool {
+        guard session.document != nil, begin() else { return false }
+        defer { session.isProjectBusy = false }
+        guard let snapshot = session.projectSnapshot() else { return false }
+        session.applyImageSize(try await ImageResizer.shared.resize(snapshot, to: options))
+        return true
     }
 
     func trim() async {
